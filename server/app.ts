@@ -9,6 +9,7 @@ import { clock } from './clock.ts';
 import { obj, str } from './validate.ts';
 import { songRoutes } from './routes/songs.ts';
 import { importSongs } from './songs.ts';
+import { addRoot, scanRoot } from './library.ts';
 
 export interface Deps {
   router: Router;
@@ -35,6 +36,8 @@ export function createApp(cfg: Config) {
     });
     // A few tiny songs for the tests.
     router.post('/api/test/songs', () => importSongs(db, cfg, path.join(ROOT, 'e2e', 'fixtures', 'music')));
+    // A small library folder (like the NAS), scanned in place.
+    router.post('/api/test/library', () => scanRoot(db, addRoot(db, path.join(ROOT, 'e2e', 'fixtures', 'library'))));
     router.post('/api/test/clock', jsonBody, (ctx) => {
       const iso = str(obj(ctx.body), 'iso', { optional: true, max: 40 });
       clock.set(iso ? new Date(iso) : null);

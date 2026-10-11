@@ -1,9 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const schemaFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'schema.sql');
+import { migrate } from './migrate.ts';
 
 export type Param = SQLInputValue;
 
@@ -15,7 +13,8 @@ export class Db {
     if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
     this.raw = new DatabaseSync(file);
     this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
-    this.raw.exec(fs.readFileSync(schemaFile, 'utf8'));
+    const backup = migrate(this, file);
+    if (backup) console.log(`Database upgraded. Backup of the old one: ${backup}`);
   }
 
   all<T>(sql: string, ...params: Param[]): T[] {
@@ -43,9 +42,9 @@ export class Db {
     }
   }
 
-  /** Remove every row (used by tests). */
+  /** Remove every song and every root but the uploads one (used by tests). */
   wipe() {
-    this.raw.exec('DELETE FROM songs; DELETE FROM sqlite_sequence;');
+    this.raw.exec("DELETE FROM songs; DELETE FROM roots WHERE kind <> 'uploads'; DELETE FROM sqlite_sequence WHERE name = 'songs';");
   }
 
   close() {

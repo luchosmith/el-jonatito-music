@@ -1,8 +1,15 @@
 // 🎧 Music: one audio player for the whole app. The songs play in a random order; when the list ends,
-// a new random order starts.
+// a new random order starts. Each song's volume is evened out when its loudness is known (no sudden loud
+// songs); a song that can't be played is skipped.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.ts';
 import type { Song, SongList } from '../../shared/types.ts';
+
+/** A volume can only turn a song down: louder-than-target songs come down to it, quieter ones stay as they are. */
+const volumeFor = (s: Song) => (s.gain_db === null ? 1 : Math.min(1, 10 ** (s.gain_db / 20)));
+
+/** This many songs failing in a row (e.g. the NAS is away, or bedtime locked the files): stop trying. */
+const MAX_FAILS = 3;
 
 const shuffle = (n: number) => {
   const a = Array.from({ length: n }, (_, i) => i);
@@ -45,13 +52,14 @@ export function useMusic(): Music {
   const [progress, setProgress] = useState(0);
   const [sleepingUntil, setSleepingUntil] = useState<string | null>(null);
   // The audio events need the latest list without re-subscribing.
-  const state = useRef({ songs, order, cur, playing, paused });
+  const state = useRef({ songs, order, cur, playing, paused, fails: 0 });
   state.current = { ...state.current, songs, order, cur, playing, paused };
 
   const playAtIn = useCallback((k: number, ord: number[], list: Song[]) => {
     const song = list[ord[k]];
     if (!song) return;
     audio.src = song.audio_url;
+    audio.volume = volumeFor(song);
     void audio.play().catch(() => undefined);
     setCur(k);
     setProgress(0);
@@ -60,6 +68,7 @@ export function useMusic(): Music {
   }, [audio]);
 
   const stop = useCallback(() => {
+    state.current.fails = 0;
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
@@ -105,13 +114,21 @@ export function useMusic(): Music {
       playAtIn(0, fresh, list);
     };
     const tick = () => setProgress(audio.duration ? audio.currentTime / audio.duration : 0);
-    const failed = () => { if (state.current.playing && audio.getAttribute('src')) stop(); }; // e.g. bedtime: the file is locked
+    const started = () => { state.current.fails = 0; };
+    // A song that can't be played is skipped; several in a row stop the music.
+    const failed = () => {
+      if (!state.current.playing || !audio.getAttribute('src')) return;
+      if (++state.current.fails >= MAX_FAILS) return stop();
+      next();
+    };
     audio.addEventListener('ended', next);
     audio.addEventListener('timeupdate', tick);
+    audio.addEventListener('playing', started);
     audio.addEventListener('error', failed);
     return () => {
       audio.removeEventListener('ended', next);
       audio.removeEventListener('timeupdate', tick);
+      audio.removeEventListener('playing', started);
       audio.removeEventListener('error', failed);
     };
   }, [audio, playAtIn, stop]);

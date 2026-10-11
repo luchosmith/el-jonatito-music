@@ -8,6 +8,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { loadConfig, type Config } from './config.ts';
 import { Db } from './db.ts';
+import { ensureUploadsRoot } from './migrate.ts';
 
 interface SourceSong { title: string; artist: string | null; file: string; cover: string | null; source: string | null; hidden: number; normalized: number; added_at: string }
 
@@ -24,6 +25,7 @@ export function importFromJonatito(db: Db, cfg: Config, srcDataDir: string): { a
 
   const songsDir = path.join(cfg.uploadsDir, 'songs');
   const coversDir = path.join(cfg.uploadsDir, 'covers');
+  const uploads = ensureUploadsRoot(db);
   fs.mkdirSync(songsDir, { recursive: true });
   fs.mkdirSync(coversDir, { recursive: true });
   let added = 0;
@@ -37,8 +39,8 @@ export function importFromJonatito(db: Db, cfg: Config, srcDataDir: string): { a
     fs.copyFileSync(file, path.join(songsDir, s.file));
     const cover = s.cover && fs.existsSync(path.join(srcDataDir, 'uploads', 'images', s.cover)) ? s.cover : null;
     if (cover) fs.copyFileSync(path.join(srcDataDir, 'uploads', 'images', cover), path.join(coversDir, cover));
-    db.run('INSERT INTO songs(title, artist, file, cover, source, hidden, normalized, added_at) VALUES(?,?,?,?,?,?,?,?)',
-      s.title, s.artist, s.file, cover, s.source, s.hidden, s.normalized, s.added_at);
+    db.run('INSERT INTO songs(root_id, path, title, artist, cover, embedded_cover, source, hidden, normalized, added_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+      uploads, s.file, s.title, s.artist, cover, cover ? 1 : 0, s.source, s.hidden, s.normalized, s.added_at);
     added++;
   }
   return { added, skipped };

@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Config } from './config.ts';
 import type { Db } from './db.ts';
+import { ensureUploadsRoot } from './migrate.ts';
 
 // FLAC and WAV are fine too: every song is turned into an evened-out MP3 on the way in.
 const AUDIO_EXT = ['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.webm', '.flac', '.wav'];
@@ -21,9 +22,12 @@ function tagsOf(file: string): Tags {
   return { title: low.title || undefined, artist: low.artist || undefined };
 }
 
-/** "01 - Dura.mp3" -> "Dura"; "aha - take on me" (no artist tag) -> artist "aha", title "take on me". */
+/**
+ * "01 - Dura.mp3" -> "Dura"; "aha - take on me" (no artist tag) -> artist "aha", title "take on me".
+ * A track number needs something after it ("01 -", "01.", "01 "), so "1979" stays "1979".
+ */
 export function songName(fileName: string, tags: Tags): { title: string; artist: string | null } {
-  let title = (tags.title ?? path.parse(fileName).name).replace(/^\d{1,3}\s*[-.]?\s*/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+  let title = (tags.title ?? path.parse(fileName).name).replace(/^\d{1,3}(\s*[-.]\s*|\s+)(?=\S)/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
   let artist = tags.artist ?? null;
   if (!artist && title.includes(' - ')) {
     const parts = title.split(' - ');
@@ -33,13 +37,16 @@ export function songName(fileName: string, tags: Tags): { title: string; artist:
   return { title: title || path.parse(fileName).name, artist };
 }
 
+/** ffmpeg arguments that turn a picture (or a song's embedded one) into a 300 px square JPEG. */
+export const coverArgs = (src: string, dest: string) =>
+  ['-v', 'error', '-y', '-i', src, '-an', '-frames:v', '1', '-vf', 'scale=300:300:force_original_aspect_ratio=increase,crop=300:300', dest];
+
 /** The file's embedded picture as a 300 px square JPEG in uploads/covers, or null. */
 function extractCover(src: string, uploadsDir: string): string | null {
   const dir = path.join(uploadsDir, 'covers');
   fs.mkdirSync(dir, { recursive: true });
   const name = `song-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`;
-  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', src, '-an', '-frames:v', '1',
-    '-vf', 'scale=300:300:force_original_aspect_ratio=increase,crop=300:300', path.join(dir, name)]);
+  const r = spawnSync('ffmpeg', coverArgs(src, path.join(dir, name)));
   return r.status === 0 && fs.existsSync(path.join(dir, name)) ? name : null;
 }
 
@@ -61,16 +68,19 @@ export function normalizeAudio(src: string, dest: string): boolean {
   return r.status === 0 && fs.existsSync(dest);
 }
 
-/** Evens out the songs imported before this existed (or whose first try failed). Returns how many were done. */
+/**
+ * Evens out the uploaded songs whose first try failed. Returns how many were done.
+ * Only the uploads folder: songs in a library folder (the NAS) are never rewritten.
+ */
 export function normalizeSongs(db: Db, cfg: Config, log: (msg: string) => void = () => undefined): { done: number; failed: number } {
   const dir = path.join(cfg.uploadsDir, 'songs');
   let done = 0;
   let failed = 0;
-  for (const s of db.all<{ id: number; title: string; file: string }>('SELECT id, title, file FROM songs WHERE normalized = 0 ORDER BY id')) {
+  for (const s of db.all<{ id: number; title: string; path: string }>('SELECT id, title, path FROM songs WHERE root_id = ? AND normalized = 0 ORDER BY id', ensureUploadsRoot(db))) {
     const file = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}.mp3`;
-    if (normalizeAudio(path.join(dir, s.file), path.join(dir, file))) {
-      db.run('UPDATE songs SET file = ?, normalized = 1 WHERE id = ?', file, s.id);
-      fs.rmSync(path.join(dir, s.file), { force: true });
+    if (normalizeAudio(path.join(dir, s.path), path.join(dir, file))) {
+      db.run('UPDATE songs SET path = ?, normalized = 1 WHERE id = ?', file, s.id);
+      fs.rmSync(path.join(dir, s.path), { force: true });
       done++;
       log(`✓ ${s.title}`);
     } else {
@@ -85,13 +95,15 @@ export function normalizeSongs(db: Db, cfg: Config, log: (msg: string) => void =
 export const songKey = (s: string | null | undefined) => (s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 /**
- * Imports every audio file in `dir` that is not in the list yet: not the same file (by name), and not the
- * same song (same title and artist, e.g. a copy from another folder). Returns how many were added.
+ * Copies every audio file in `dir` into the uploads folder (evened out), unless it is there already: the
+ * same file (by name), or the same song (same title and artist, e.g. a copy from another folder). Library
+ * folders (the NAS) are not compared: they keep every file, duplicates too. Returns how many were added.
  */
 export function importSongs(db: Db, cfg: Config, dir: string): { added: number; skipped: number } {
   const files = fs.readdirSync(dir).filter((f) => AUDIO_EXT.includes(path.extname(f).toLowerCase())).sort();
   const songsDir = path.join(cfg.uploadsDir, 'songs');
   fs.mkdirSync(songsDir, { recursive: true });
+  const uploads = ensureUploadsRoot(db);
   let added = 0;
   let skipped = 0;
   for (const f of files) {
@@ -101,7 +113,7 @@ export function importSongs(db: Db, cfg: Config, dir: string): { added: number; 
     }
     const src = path.join(dir, f);
     const { title, artist } = songName(f, tagsOf(src));
-    const same = db.all<{ title: string; artist: string | null }>('SELECT title, artist FROM songs')
+    const same = db.all<{ title: string; artist: string | null }>('SELECT title, artist FROM songs WHERE root_id = ?', uploads)
       .some((s) => songKey(s.title) === songKey(title) && (!s.artist || !artist || songKey(s.artist) === songKey(artist)));
     if (same) {
       skipped++;
@@ -114,8 +126,10 @@ export function importSongs(db: Db, cfg: Config, dir: string): { added: number; 
       file = file.replace(/\.mp3$/, path.extname(f).toLowerCase());
       fs.copyFileSync(src, path.join(songsDir, file));
     }
-    db.run('INSERT INTO songs(title, artist, file, cover, source, normalized, added_at) VALUES(?,?,?,?,?,?,?)',
-      title, artist, file, extractCover(src, cfg.uploadsDir), f, normalized ? 1 : 0, new Date().toISOString());
+    const cover = extractCover(src, cfg.uploadsDir);
+    const size = fs.statSync(path.join(songsDir, file)).size;
+    db.run('INSERT INTO songs(root_id, path, title, artist, codec, size, cover, embedded_cover, source, normalized, added_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      uploads, file, title, artist, normalized ? 'mp3' : null, size, cover, cover ? 1 : 0, f, normalized ? 1 : 0, new Date().toISOString());
     added++;
   }
   return { added, skipped };

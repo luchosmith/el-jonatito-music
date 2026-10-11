@@ -16,6 +16,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 test('song names: tags first; track numbers and [Explicit] go; "artist - title" file names split', () => {
   assert.deepEqual(songName('04 - La Camisa Negra [Explicit].mp3', { title: 'La Camisa Negra', artist: 'Juanes' }), { title: 'La Camisa Negra', artist: 'Juanes' });
   assert.deepEqual(songName('01. Clandestino.mp3', {}), { title: 'Clandestino', artist: null });
+  assert.deepEqual(songName('1979.mp3', {}), { title: '1979', artist: null });
+  assert.deepEqual(songName('01 Dancing Queen.mp3', {}), { title: 'Dancing Queen', artist: null });
   assert.deepEqual(songName('aha - take on me.mp3', { title: 'aha - take on me' }), { title: 'take on me', artist: 'aha' });
   assert.deepEqual(songName('003 Desnudate Mujer - Frankie Ruiz.mp3', { title: 'Desnudate Mujer (Frankie Ruiz)', artist: 'Frankie Ruiz' }), { title: 'Desnudate Mujer (Frankie Ruiz)', artist: 'Frankie Ruiz' });
 });
@@ -26,9 +28,9 @@ test('importing a folder: files copied, cover art taken out of the file, a secon
   const db = new Db(cfg.dbFile);
   const folder = path.join(here, '..', 'e2e', 'fixtures', 'music');
   assert.deepEqual(importSongs(db, cfg, folder), { added: 3, skipped: 0 });
-  const rows = db.all<{ title: string; artist: string | null; file: string; cover: string | null }>('SELECT * FROM songs ORDER BY source');
+  const rows = db.all<{ title: string; artist: string | null; path: string; cover: string | null }>('SELECT * FROM songs ORDER BY source');
   assert.deepEqual(rows.map((r) => [r.title, r.artist, !!r.cover]), [['Tiny Tune', 'The Testers', true], ['Third One', 'Band', false], ['Short Song', 'The Beeps', false]]);
-  for (const r of rows) assert.ok(fs.existsSync(path.join(cfg.uploadsDir, 'songs', r.file)));
+  for (const r of rows) assert.ok(fs.existsSync(path.join(cfg.uploadsDir, 'songs', r.path)));
   assert.ok(fs.existsSync(path.join(cfg.uploadsDir, 'covers', rows[0].cover!)));
   assert.deepEqual(importSongs(db, cfg, folder), { added: 0, skipped: 3 });
   db.close();
@@ -53,9 +55,9 @@ test('loudness is evened out: a very quiet and a very loud song end up at about 
   const cfg = loadConfig({ TEST_MODE: '1', DATA_DIR: dir });
   const db = new Db(cfg.dbFile);
   importSongs(db, cfg, src);
-  const rows = db.all<{ file: string; normalized: number }>('SELECT file, normalized FROM songs ORDER BY source');
+  const rows = db.all<{ path: string; normalized: number }>('SELECT path, normalized FROM songs ORDER BY source');
   assert.deepEqual(rows.map((r) => r.normalized), [1, 1]);
-  const after = rows.map((r) => loudness(path.join(cfg.uploadsDir, 'songs', r.file)));
+  const after = rows.map((r) => loudness(path.join(cfg.uploadsDir, 'songs', r.path)));
   assert.ok(Math.abs(after[0] - after[1]) < 1.5, `evened out: ${after}`);
   for (const a of after) assert.ok(Math.abs(a - -16) < 1.5, `near -16 LUFS: ${a}`);
   db.close();
@@ -97,8 +99,8 @@ test('a FLAC song is imported as an evened-out MP3, with its name', () => {
   const cfg = loadConfig({ TEST_MODE: '1', DATA_DIR: dir });
   const db = new Db(cfg.dbFile);
   assert.deepEqual(importSongs(db, cfg, src), { added: 1, skipped: 0 });
-  const row = db.get<{ title: string; artist: string; file: string; normalized: number }>('SELECT * FROM songs')!;
-  assert.deepEqual([row.title, row.artist, row.normalized, path.extname(row.file)], ['Lossless Tune', 'Hi Fi', 1, '.mp3']);
+  const row = db.get<{ title: string; artist: string; path: string; normalized: number }>('SELECT * FROM songs')!;
+  assert.deepEqual([row.title, row.artist, row.normalized, path.extname(row.path)], ['Lossless Tune', 'Hi Fi', 1, '.mp3']);
   db.close();
 });
 

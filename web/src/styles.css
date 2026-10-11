@@ -45,3 +45,4 @@ img { display: block; }
 .eq b:nth-child(2) { animation-delay: -.3s; } .eq b:nth-child(3) { animation-delay: -.6s; } .eq b:nth-child(4) { animation-delay: -.15s; }
 .eq.big { height: 30px; }
 @keyframes eq-bar { from { height: 20%; } to { height: 100%; } }
+.music-more { grid-column: 1 / -1; height: 1px; }

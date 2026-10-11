@@ -4,6 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 export class HttpError extends Error {
   constructor(
@@ -102,13 +103,17 @@ export class Router {
   }
 }
 
+/** JSON; gzipped when it is big and the client takes gzip (the whole library is a few MB). */
 export function sendJson(res: ServerResponse, status: number, body: unknown) {
-  const data = JSON.stringify(body);
-  res.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(data),
-    'Cache-Control': 'no-store',
-  });
+  let data: string | Buffer = JSON.stringify(body);
+  const headers: Record<string, string | number> = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
+  if (data.length > 16 * 1024 && /\bgzip\b/.test(String(res.req?.headers['accept-encoding'] ?? ''))) {
+    data = zlib.gzipSync(data);
+    headers['Content-Encoding'] = 'gzip';
+    headers.Vary = 'Accept-Encoding';
+  }
+  headers['Content-Length'] = Buffer.byteLength(data);
+  res.writeHead(status, headers);
   res.end(data);
 }
 
@@ -167,6 +172,13 @@ const MIME: Record<string, string> = {
   '.m4a': 'audio/mp4',
   '.mp4': 'video/mp4',
   '.mp3': 'audio/mpeg',
+  '.flac': 'audio/flac',
+  '.wav': 'audio/wav',
+  '.aac': 'audio/aac',
+  '.oga': 'audio/ogg',
+  '.opus': 'audio/ogg',
+  '.aif': 'audio/aiff',
+  '.aiff': 'audio/aiff',
   '.webmanifest': 'application/manifest+json',
 };
 
