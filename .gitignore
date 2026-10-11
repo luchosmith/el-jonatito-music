@@ -1,0 +1,20 @@
+# dependencies & build output
+node_modules/
+web/dist/
+
+# runtime data (database, imported songs and cover art)
+data/
+.e2e-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# test output
+test-results/
+playwright-report/
+
+# secrets & OS files
+.env
+.env.*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+{
+  "name": "El Jonatito Music",
+  "short_name": "Music",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e2434",
+  "theme_color": "#262d40",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
