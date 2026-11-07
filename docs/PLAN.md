@@ -40,14 +40,23 @@ Genres are sorted into families (`genre_parents`): a genre picks everything unde
 list of rules; a genre can have several parents (Pop-Punk: Pop and Punk). Families are siblings: Rock, Metal,
 Punk and Alternative; Latin and World; Dance and Electronic; R&B, Soul and Funk.
 
+### v0.4: one copy of each song (done)
+
+24,651 files are 19,206 songs: copies are grouped (same artist and title without noise like "(Remastered)",
+about the same length) and the player plays the main copy ([server/versions.ts](../server/versions.ts)): lossless
+over lossy, the original album over a compilation, better sound, the earliest year; or one picked by hand
+(`PATCH /api/songs/:id { main: true }`). Live versions, remixes, takes ... are songs of their own, a live
+recording one per live album. Hiding a song hides every copy. Next: a view of a song's other versions
+(`GET /api/songs/:id/versions` lists them) to play another one or pick it.
+
 ## Next steps
 
 ### 2. Library management (finishing "songs over the network")
 
 - **Rescan from the app** (a button / an API call), and maybe a scheduled rescan, instead of only the CLI.
-- **Duplicates**: a way to review them (same `quick_hash`; same title + artist + similar duration) and
-  choose which copy the player uses, e.g. prefer FLAC over MP3. Non-identical copies (different rips or
-  encodings) could be found with an audio fingerprint (Chromaprint / `fpcalc`).
+- **Copies**: songs with a different title spelling ("Teddy Bear" / "(Let Me Be Your) Teddy Bear") or artist
+  credit ("Daddy Yankee & Snoop Dogg") aren't grouped yet; an audio fingerprint (Chromaprint / `fpcalc`)
+  would find them, and tell apart recordings the tags can't (a re-recording with the same title).
 - **Formats browsers can't play** (WMA, ALAC, APE ...): transcode on the fly with ffmpeg, or leave them out
   (as now).
 - **Artists and albums as their own tables** (built from the tags), so browsing and search don't depend on
@@ -85,8 +94,6 @@ needs one (El Jonatito's `server/auth.ts`, with cookies and tokens, can be reuse
 
 ## Open questions
 
-- **Duplicates**: which copy should win by default (FLAC over MP3? the one with the most tags?), or should
-  the user choose per album?
 - **Clients**: will other devices play over the network (phones, other rooms), or is it still one tablet?
 - **Users**: are playlists shared by everyone, or does each person have their own?
 - **Kid mode**: should this app keep the simple picture-only kid view as its own mode (as in El Jonatito)

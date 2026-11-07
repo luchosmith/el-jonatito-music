@@ -18,6 +18,7 @@
     "library:scan": "tsx server/library-scan.ts",
     "library:loudness": "tsx server/library-loudness.ts",
     "library:genres": "tsx server/library-genres.ts",
+    "library:versions": "tsx server/library-versions.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:unit": "tsx --test test/*.test.ts",
     "e2e:server": "node scripts/build-web.mjs && tsx server/index.ts",

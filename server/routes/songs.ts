@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Deps } from '../app.ts';
 import { HttpError, jsonBody, safeJoin, sendFile } from '../http.ts';
 import { PLAYABLE_CODECS, songCover, songFile } from '../library.ts';
+import { rebuildVersions } from '../versions.ts';
 import { bool, obj } from '../validate.ts';
 import { inWindow, minutesOfDay, startOfDay } from '../../shared/time.ts';
 import type { SongList } from '../../shared/types.ts';
@@ -27,14 +28,17 @@ export function songRoutes({ router, db, cfg, now }: Deps) {
     return { locked: true, unlock_at: u.toISOString() };
   };
 
-  /** The songs the player can play (hidden ones too with ?all=1). Missing files and formats browsers can't play are left out. */
+  /**
+   * The songs the player can play: one copy of each (the main one), hidden ones too with ?all=1. Missing files and
+   * formats browsers can't play are left out.
+   */
   router.get('/api/songs', (ctx): SongList => {
     const all = ctx.url.searchParams.get('all') === '1';
     const songs = db.all<{ id: number; title: string; artist: string | null; album: string | null; hidden: number; cover: string | null; embedded_cover: number;
       folder_cover: string | null; normalized: number; loudness_lufs: number | null; rg_track_gain: number | null }>(
       `SELECT s.id, s.title, s.artist, s.album, s.hidden, s.cover, s.embedded_cover, s.folder_cover, s.normalized, s.loudness_lufs, s.rg_track_gain
        FROM songs s JOIN roots r ON r.id = s.root_id
-       WHERE s.missing = 0 AND (r.kind = 'uploads' OR s.codec IN (${PLAYABLE_CODECS.map(() => '?').join(',')})) ${all ? '' : 'AND s.hidden = 0'}
+       WHERE s.missing = 0 AND s.is_main = 1 AND (r.kind = 'uploads' OR s.codec IN (${PLAYABLE_CODECS.map(() => '?').join(',')})) ${all ? '' : 'AND s.hidden = 0'}
        ORDER BY s.id`, ...PLAYABLE_CODECS,
     ).map((s) => ({
       id: s.id, title: s.title, artist: s.artist, album: s.album,
@@ -44,14 +48,42 @@ export function songRoutes({ router, db, cfg, now }: Deps) {
     return { songs, ...lockState() };
   });
 
-  /** Hide a song (or show it again). */
+  /**
+   * { hidden }: hide a song, every copy of it (or show it again). { main: true }: this copy is the one the player
+   * plays, whatever the rules would pick.
+   */
   router.patch('/api/songs/:id', jsonBody, (ctx) => {
     const id = Number(ctx.params.id);
-    if (!db.get('SELECT 1 FROM songs WHERE id = ?', id)) throw new HttpError(404, 'Unknown song');
-    const hidden = bool(obj(ctx.body), 'hidden');
-    if (hidden === undefined) throw new HttpError(400, 'hidden is required');
-    db.run('UPDATE songs SET hidden = ? WHERE id = ?', hidden ? 1 : 0, id);
-    return { id, hidden };
+    const song = db.get<{ version_key: string | null }>('SELECT version_key FROM songs WHERE id = ?', id);
+    if (!song) throw new HttpError(404, 'Unknown song');
+    const body = obj(ctx.body);
+    const hidden = bool(body, 'hidden');
+    const main = bool(body, 'main');
+    if (hidden === undefined && main !== true) throw new HttpError(400, 'hidden or main: true is required');
+    const copies = song.version_key ? 'version_key = ?' : 'id = ?';
+    const of = song.version_key ?? id;
+    db.tx(() => {
+      if (hidden !== undefined) db.run(`UPDATE songs SET hidden = ? WHERE ${copies}`, hidden ? 1 : 0, of);
+      if (main) {
+        db.run(`UPDATE songs SET preferred = 0 WHERE ${copies}`, of);
+        db.run('UPDATE songs SET preferred = 1 WHERE id = ?', id);
+      }
+    });
+    if (main) rebuildVersions(db, PLAYABLE_CODECS);
+    return { id, ...(hidden !== undefined ? { hidden } : {}), ...(main ? { main } : {}) };
+  });
+
+  /** Every copy of the song (the main one first): where each is, its format and album. */
+  router.get('/api/songs/:id/versions', (ctx) => {
+    const id = Number(ctx.params.id);
+    const song = db.get<{ version_key: string | null }>('SELECT version_key FROM songs WHERE id = ?', id);
+    if (!song) throw new HttpError(404, 'Unknown song');
+    return db.all<{ id: number; title: string; artist: string | null; album: string | null; year: number | null; codec: string | null; bitrate: number | null;
+      duration_s: number | null; is_main: number; preferred: number; missing: number; root: string; path: string }>(
+      `SELECT s.id, s.title, s.artist, s.album, s.year, s.codec, s.bitrate, s.duration_s, s.is_main, s.preferred, s.missing, r.name AS root, s.path
+       FROM songs s JOIN roots r ON r.id = s.root_id WHERE ${song.version_key ? 's.version_key = ?' : 's.id = ?'} ORDER BY s.is_main DESC, s.id`,
+      song.version_key ?? id,
+    ).map(({ is_main, preferred, missing, ...v }) => ({ ...v, main: !!is_main, preferred: !!preferred, missing: !!missing }));
   });
 
   // The song itself. The sleep lock applies here too, so a saved link can't get around it.

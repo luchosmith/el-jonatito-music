@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS songs (
   embedded_cover INTEGER NOT NULL DEFAULT 0,    -- the file has a picture inside
   folder_cover  TEXT,                           -- a picture next to it (cover.jpg, folder.jpg, ...), relative to the root
   cover         TEXT,                           -- the cached 300 px JPEG in uploads/covers; '' = tried, none usable
+  -- copies of the same song (server/versions.ts): the player plays the main copy of each
+  version_key   TEXT,                           -- the same for every copy of a song (same artist, title, kind of recording, length)
+  is_main       INTEGER NOT NULL DEFAULT 1,     -- 1 = the copy the player plays
+  preferred     INTEGER NOT NULL DEFAULT 0,     -- 1 = picked by hand as the main copy
   -- bookkeeping
   source        TEXT UNIQUE,                    -- uploads: the original file name (importing again skips it)
   hidden        INTEGER NOT NULL DEFAULT 0,
@@ -62,6 +66,7 @@ CREATE INDEX IF NOT EXISTS songs_title ON songs(title COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_artist ON songs(artist COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_album ON songs(album COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_quick_hash ON songs(quick_hash);
+CREATE INDEX IF NOT EXISTS songs_version ON songs(version_key);
 
 -- Genres for filtering: made from the songs' genre tags (songs.genre, left as it is) by server/genres.ts,
 -- which splits tags like "Pop, Rock", merges spellings and sorts genres into families. Rebuilt after every scan.

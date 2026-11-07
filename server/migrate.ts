@@ -4,13 +4,16 @@
 // v2: the library: roots (a NAS folder, the uploads folder) and a row per audio file with all its metadata.
 // v3: genres (cleaned up from the genre tags) and which songs have them.
 // v4: genre families (genre_parents: Nu Metal is a kind of Metal).
+// v5: copies of the same song (songs.version_key, is_main, preferred): the player plays one copy of each.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Db } from './db.ts';
 import { rebuildGenres } from './genres.ts';
+import { PLAYABLE_CODECS } from './library.ts';
+import { rebuildVersions } from './versions.ts';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const schemaFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
@@ -35,9 +38,15 @@ export function migrate(db: Db, file: string): string | null {
     db.raw.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
   }
   if (from < 2) db.tx(() => v1to2(db));
-  if (from < 4) {
-    db.raw.exec(fs.readFileSync(schemaFile, 'utf8')); // the new tables (everything else is IF NOT EXISTS)
+  if (from < 5) {
+    // New columns first (schema.sql indexes them), then the new tables (everything else is IF NOT EXISTS).
+    const have = db.all<{ name: string }>('PRAGMA table_info(songs)').map((c) => c.name);
+    for (const [col, def] of [['version_key', 'TEXT'], ['is_main', 'INTEGER NOT NULL DEFAULT 1'], ['preferred', 'INTEGER NOT NULL DEFAULT 0']]) {
+      if (!have.includes(col)) db.raw.exec(`ALTER TABLE songs ADD COLUMN ${col} ${def}`);
+    }
+    db.raw.exec(fs.readFileSync(schemaFile, 'utf8'));
     rebuildGenres(db);
+    rebuildVersions(db, PLAYABLE_CODECS);
   }
   db.raw.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return backup;

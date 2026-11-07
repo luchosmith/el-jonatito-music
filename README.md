@@ -75,6 +75,27 @@ Everything is rebuilt after every scan. After changing the rules, run `npm run l
 families, each genre with how many songs it picks and how many are tagged exactly that
 (`-- --tags`: a flat list of the genres and the tags each was made from).
 
+**Copies of the same song**: many songs are in the library several times (Elvis's "Don't Be Cruel" 28 times:
+albums, compilations, box sets). The copies are grouped and the player plays one of each, the **main copy**;
+the others stay in the database and on the NAS ([server/versions.ts](server/versions.ts)). 24,651 files are
+19,206 songs.
+
+- **The same song** = the same main artist (without "The" or "feat. …") and title, once noise is taken out of
+  the title ("(Remastered 2009)", "[Explicit]", "- Mono", "(Radio Edit)"), and about the same length (within
+  10 s). A bracket the rules don't know ("(Love Theme)") stays part of the title. Songs without an artist
+  aren't grouped.
+- **Other recordings are songs of their own**: live versions, remixes, demos, takes, acoustic, instrumental
+  ...; a live recording is one per album (each live album is another performance); and copies of very
+  different lengths (an extended version).
+- **The main copy**: the one picked by hand; else lossless (FLAC) over lossy; the original album over a
+  compilation ("Greatest Hits", "Various Artists" ...); better sound (24-bit/96 kHz over 16-bit/44.1 kHz; for
+  lossy, the bitrate); the earliest year; one with a cover.
+- **Hiding** a song hides every copy of it, and copies a later scan finds.
+
+Rebuilt after every scan. After changing the rules, run `npm run library:versions` (the numbers and the songs
+with the most copies), or `npm run library:versions -- <words>` to see the copies of the songs whose artist or
+title has those words (▶ = the main copy).
+
 ### Uploads
 
 The app also has its own **uploads** folder (`data/uploads/songs`): `npm run music:import -- <folder>`
@@ -91,6 +112,7 @@ copies El Jonatito's songs, covers and hidden flags into it (El Jonatito is only
 | `npm run library:scan [-- <folder>]` | Add and scan a library folder / rescan all of them |
 | `npm run library:loudness [-- <n>]` | Measure the loudness of songs not measured yet |
 | `npm run library:genres [-- --tags]` | Rebuild the genres and their families from the tags, and list them |
+| `npm run library:versions [-- <words>]` | Regroup the copies of each song, and show them |
 | `npm run music:import -- <folder>` | Copy a folder of songs into the uploads folder (evened out) |
 | `npm run music:normalize` | Even out uploaded songs that weren't evened out on import |
 | `npm run music:from-jonatito -- <data folder>` | Copy the songs from an El Jonatito data folder into uploads |
@@ -112,8 +134,9 @@ There is no login: it is meant for a home network.
 ## Database
 
 `data/music.sqlite` (SQLite; see [server/schema.sql](server/schema.sql)): `roots` (library folders and the
-uploads folder), `songs` (a row per audio file), and `genres` / `song_genres` / `genre_parents` (the cleaned-up
-genres, which songs have them, and which genre is a kind of which). The schema is versioned (`PRAGMA user_version`); an older
+uploads folder), `songs` (a row per audio file; `version_key` groups the copies of a song, `is_main` marks the
+one the player plays), and `genres` / `song_genres` / `genre_parents` (the cleaned-up genres, which songs have
+them, and which genre is a kind of which). The schema is versioned (`PRAGMA user_version`); an older
 database is upgraded when the app opens it, after a backup copy is written next to it
 ([server/migrate.ts](server/migrate.ts)).
 
@@ -161,8 +184,9 @@ data/                runtime data, not in git: music.sqlite, uploads/songs, uplo
 
 | | |
 | --- | --- |
-| `GET /api/songs` | `{ songs, locked, unlock_at }`: the playable songs (not missing, a format browsers play); hidden ones left out (`?all=1` includes them) |
-| `PATCH /api/songs/:id` | `{ "hidden": true \| false }` |
+| `GET /api/songs` | `{ songs, locked, unlock_at }`: the playable songs, one copy of each (not missing, a format browsers play); hidden ones left out (`?all=1` includes them) |
+| `PATCH /api/songs/:id` | `{ "hidden": true \| false }`: hide or show the song (every copy); `{ "main": true }`: play this copy of it |
+| `GET /api/songs/:id/versions` | every copy of the song, the main one first (album, year, format, where it is) |
 | `GET /api/songs/:id/file` | the audio, from wherever it is (supports Range); `423` while the sleep lock is on |
 | `GET /api/songs/:id/cover` | its cover (300 px JPEG, made the first time); `404` when it has none |
 | `GET /api/health` | `{ ok: true }` |
