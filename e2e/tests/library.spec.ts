@@ -21,6 +21,9 @@ test('the library plays from its folder: every playable file (the duplicate too)
   await expect(page.locator('[data-testid="music-song"] img')).toHaveCount(3);
   await expect.poll(() => page.locator('[data-testid="music-song"] img').evaluateAll((els) => els.map((e) => (e as HTMLImageElement).naturalWidth))).toEqual([300, 300, 300]);
   await expect(page.getByTestId('music-song').filter({ hasText: '1979' })).toBeVisible();
+  // Hovering a cover shows the song and its artist.
+  await expect(page.getByRole('button', { name: 'Second, Artist A' })).toHaveAttribute('title', 'Second — Artist A');
+  await expect(page.getByTestId('music-song').filter({ hasText: '1979' })).toHaveAttribute('title', '1979');
   // A FLAC straight from the folder plays.
   await page.getByRole('button', { name: 'Second, Artist A' }).click();
   await expect(page.getByTestId('music-now')).toHaveAttribute('data-song', String(songs.find((s: { title: string }) => s.title === 'Second').id));

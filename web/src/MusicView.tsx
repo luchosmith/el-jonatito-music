@@ -21,6 +21,9 @@ export function SongPicture({ song }: { song: Song }) {
   );
 }
 
+/** "Title — Artist" (or just the title): shown when the mouse is over a cover. */
+const songLabel = (s: Song) => (s.artist ? `${s.title} — ${s.artist}` : s.title);
+
 const Bars = ({ big }: { big?: boolean }) => <i className={`eq ${big ? 'big' : ''}`} aria-hidden><b /><b /><b /><b /></i>;
 
 /** The grid shows this many tiles more each time it is scrolled to the end (a library has thousands). */
@@ -58,7 +61,7 @@ export function MusicView({ music, onToggle, onPick, onPause }: {
         ) : now ? (
           <>
             <button className={`music-cur ${music.paused ? 'paused' : ''}`} data-testid="music-now" data-song={now.id} data-paused={music.paused ? 'yes' : 'no'}
-              onClick={onPause} aria-label={music.paused ? 'Go on' : 'Pause'}>
+              onClick={onPause} aria-label={music.paused ? 'Go on' : 'Pause'} title={songLabel(now)}>
               <SongPicture song={now} />
               {music.paused ? <i className="music-resume" aria-hidden>▶</i> : <Bars big />}
             </button>
@@ -73,7 +76,7 @@ export function MusicView({ music, onToggle, onPick, onPause }: {
       <div className="music-grid">
         {music.list.slice(0, count).map((s, k) => (
           <button key={`${k}-${s.id}`} className={`music-tile ${k === music.cur && music.playing ? 'cur' : ''}`}
-            data-testid="music-song" data-song={s.id} onClick={() => onPick(k)} aria-label={s.artist ? `${s.title}, ${s.artist}` : s.title}>
+            data-testid="music-song" data-song={s.id} onClick={() => onPick(k)} aria-label={s.artist ? `${s.title}, ${s.artist}` : s.title} title={songLabel(s)}>
             <SongPicture song={s} />
             {k === music.cur && music.playing && !music.paused && <Bars />}
           </button>
