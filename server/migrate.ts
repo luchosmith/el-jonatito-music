@@ -2,12 +2,15 @@
 // upgraded step by step, after a backup copy is made next to it.
 // v1 (0 on disk): the clone of El Jonatito's 🎧 Music: one songs table, every file in uploads/songs.
 // v2: the library: roots (a NAS folder, the uploads folder) and a row per audio file with all its metadata.
+// v3: genres (cleaned up from the genre tags) and which songs have them.
+// v4: genre families (genre_parents: Nu Metal is a kind of Metal).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Db } from './db.ts';
+import { rebuildGenres } from './genres.ts';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 
 const schemaFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
@@ -32,6 +35,10 @@ export function migrate(db: Db, file: string): string | null {
     db.raw.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
   }
   if (from < 2) db.tx(() => v1to2(db));
+  if (from < 4) {
+    db.raw.exec(fs.readFileSync(schemaFile, 'utf8')); // the new tables (everything else is IF NOT EXISTS)
+    rebuildGenres(db);
+  }
   db.raw.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return backup;
 }

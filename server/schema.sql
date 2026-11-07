@@ -62,3 +62,23 @@ CREATE INDEX IF NOT EXISTS songs_title ON songs(title COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_artist ON songs(artist COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_album ON songs(album COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS songs_quick_hash ON songs(quick_hash);
+
+-- Genres for filtering: made from the songs' genre tags (songs.genre, left as it is) by server/genres.ts,
+-- which splits tags like "Pop, Rock", merges spellings and sorts genres into families. Rebuilt after every scan.
+CREATE TABLE IF NOT EXISTS genres (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+CREATE TABLE IF NOT EXISTS song_genres (
+  song_id       INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+  genre_id      INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
+  PRIMARY KEY (song_id, genre_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS song_genres_genre ON song_genres(genre_id, song_id);
+-- Which genre is a kind of which (Nu Metal -> Metal; Pop-Punk -> Punk and Pop): picking a genre picks those under it.
+CREATE TABLE IF NOT EXISTS genre_parents (
+  genre_id      INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
+  parent_id     INTEGER NOT NULL REFERENCES genres(id) ON DELETE CASCADE,
+  PRIMARY KEY (genre_id, parent_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS genre_parents_parent ON genre_parents(parent_id, genre_id);

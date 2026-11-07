@@ -28,6 +28,18 @@ music when a film starts.
 - **Versioned schema** with migrations and automatic backups ([server/migrate.ts](../server/migrate.ts)).
   The 145 songs copied from El Jonatito are kept as the app's "uploads" folder.
 
+### v0.3: genres cleaned up (the first step towards genre playlists, done)
+
+The 307 different genre tags become 163 genres in `genres` / `song_genres`: tags split into their genres
+("Pop, Rock" is both), spellings merged, synonyms and non-genres handled by an alias list
+([server/genres.ts](../server/genres.ts)), rebuilt after every scan. Rock now finds 9,935 songs (the raw tag
+"Rock" alone: 2,847). 2,246 songs have no genre (374 of them a tag that isn't one: "Other", "Various" ...).
+
+Genres are sorted into families (`genre_parents`): a genre picks everything under it, so Metal picks 769 songs
+(376 tagged exactly "Metal"), Latin 681 (319), Rock 13,923 (9,935). Automatic by name ("Nu Metal" → Metal) plus a
+list of rules; a genre can have several parents (Pop-Punk: Pop and Punk). Families are siblings: Rock, Metal,
+Punk and Alternative; Latin and World; Dance and Electronic; R&B, Soul and Funk.
+
 ## Next steps
 
 ### 2. Library management (finishing "songs over the network")
@@ -44,7 +56,13 @@ music when a film starts.
 - **The grid** now shows thousands of songs a page at a time; with search and playlists the default view may
   become a playlist or an album list instead of the whole library.
 
-### 3. Search
+### 3. Filters, search and genre playlists
+
+Next for genres: `GET /api/genres` (with song counts) and `GET /api/songs?genre=…&year_from=…&year_to=…`, a
+filter panel (genre chips, a year range) whose results play straight away or are saved as a playlist: a
+**smart** one (the filter itself, so new music joins it) or a **regular** one (the songs that matched, then
+edited by hand). Playlists from a filter should hold one copy of each song (see duplicates above). A
+genre filter picks the genre and everything under it (`withSubgenres` in server/genres.ts).
 
 Find songs by title, artist, album, genre or year.
 

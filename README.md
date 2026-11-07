@@ -56,6 +56,25 @@ Files browsers can't play (WMA, ALAC, APE ...) are in the database but not in th
 without ReplayGain tags. It decodes every file, so the first run over a big library takes hours; stop it
 any time and run it again later: it goes on where it was. `npm run library:loudness -- 500` does 500.
 
+**Genres**: the genre tags are messy (307 different values: "Pop, Rock", "Alternative-Rock" vs "Alt. Rock",
+"Musiques du monde", "Other" ...), so they are cleaned up into a `genres` table for filtering
+([server/genres.ts](server/genres.ts)). A tag is split into its genres (on `,` `;` `/` `+` and ` - `, so
+"Pop, Rock" is both Pop and Rock); spellings that differ only in case, accents, spaces or punctuation are one
+genre, named the way most songs spell it; a list of aliases merges synonyms ("Alt. Rock" → Alternative Rock,
+"Rap" and "Hip-Hop" → Hip-Hop & Rap, "OST" → Soundtrack) and drops tags that aren't genres. The raw tag stays
+as it is in `songs.genre`.
+
+Genres are sorted into **families**, so picking a broad genre also picks the ones under it: Metal (376 songs
+tagged exactly "Metal") picks 769 with Nu Metal, Heavy Metal, Symphonic Metal ... A genre whose name ends in
+another genre's name is under it ("Nu Metal" → Metal, "Melodic Hard Rock" → Hard Rock → Rock); a list of rules
+adds the rest (Salsa → Latin, House → Electronic and Dance), and a genre can be under several (Pop-Punk: Pop
+and Punk). The families are siblings, not under each other: Rock, Metal, Punk and Alternative; Latin and World;
+Dance and Electronic; R&B, Soul and Funk.
+
+Everything is rebuilt after every scan. After changing the rules, run `npm run library:genres`: it prints the
+families, each genre with how many songs it picks and how many are tagged exactly that
+(`-- --tags`: a flat list of the genres and the tags each was made from).
+
 ### Uploads
 
 The app also has its own **uploads** folder (`data/uploads/songs`): `npm run music:import -- <folder>`
@@ -71,6 +90,7 @@ copies El Jonatito's songs, covers and hidden flags into it (El Jonatito is only
 | `npm run dev` / `npm run dev:web` | Server with auto-restart / web build in watch mode |
 | `npm run library:scan [-- <folder>]` | Add and scan a library folder / rescan all of them |
 | `npm run library:loudness [-- <n>]` | Measure the loudness of songs not measured yet |
+| `npm run library:genres [-- --tags]` | Rebuild the genres and their families from the tags, and list them |
 | `npm run music:import -- <folder>` | Copy a folder of songs into the uploads folder (evened out) |
 | `npm run music:normalize` | Even out uploaded songs that weren't evened out on import |
 | `npm run music:from-jonatito -- <data folder>` | Copy the songs from an El Jonatito data folder into uploads |
@@ -92,9 +112,21 @@ There is no login: it is meant for a home network.
 ## Database
 
 `data/music.sqlite` (SQLite; see [server/schema.sql](server/schema.sql)): `roots` (library folders and the
-uploads folder) and `songs` (a row per audio file). The schema is versioned (`PRAGMA user_version`); an older
+uploads folder), `songs` (a row per audio file), and `genres` / `song_genres` / `genre_parents` (the cleaned-up
+genres, which songs have them, and which genre is a kind of which). The schema is versioned (`PRAGMA user_version`); an older
 database is upgraded when the app opens it, after a backup copy is written next to it
 ([server/migrate.ts](server/migrate.ts)).
+
+**Nightly backups:** a job outside this project (`~/HomeNetwork/scripts/backup-sqlite.mjs`, set up in
+`~/HomeNetwork/README.md`) copies `data/music.sqlite` to the NAS every night, as
+`/mnt/nfsserver/backups/sqlite/el-jonatito-music/el-jonatito-music-YYYY-MM-DD.sqlite`, and keeps 30 days. **Only the
+database is backed up; `data/uploads/` (uploaded songs and covers) is not.** Library folders on the NAS aren't
+affected. To restore the database, stop the server, then:
+
+```sh
+rm -f data/music.sqlite-wal data/music.sqlite-shm
+cp /mnt/nfsserver/backups/sqlite/el-jonatito-music/el-jonatito-music-2026-10-17.sqlite data/music.sqlite
+```
 
 Some handy queries (`sqlite3 data/music.sqlite`):
 

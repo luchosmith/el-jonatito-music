@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Config } from './config.ts';
 import type { Db } from './db.ts';
+import { rebuildGenres } from './genres.ts';
 import { HttpError, safeJoin } from './http.ts';
 import { coverArgs, songName } from './songs.ts';
 
@@ -241,6 +242,7 @@ export async function scanRoot(db: Db, root: Root, opts: { concurrency?: number;
   flush();
   res.missing = db.run('UPDATE songs SET missing = 1 WHERE root_id = ? AND missing = 0 AND (scanned_at IS NULL OR scanned_at < ?)', root.id, stamp).changes;
   db.run('UPDATE roots SET last_scan_at = ? WHERE id = ?', stamp, root.id);
+  rebuildGenres(db);
   return res;
 }
 
